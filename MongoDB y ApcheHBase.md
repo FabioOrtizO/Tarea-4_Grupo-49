@@ -1,211 +1,173 @@
-# 🚀 Implementacion aplicacion Spark Streaming + Kafka + Hadoop
+🚀 Proyecto: Carga y Consulta del Parque Automotor en Apache HBase usando Happybase
+📄 Descripción General
+Este proyecto documenta el procedimiento para cargar un conjunto de datos del parque automotor de Colombia, proveniente de Datos.gov.co, hacia una tabla en Apache HBase.
+Utiliza Python y la librería Happybase para conectarse a HBase, cargar datos masivos y realizar consultas básicas.
 
-Este instructivo describe detalladamente la implementación del procesamiento de datos en tiempo real con Apache Spark, Kafka, y Hadoop, utilizando como ejemplo el conjunto de datos de capturas de la Policía Nacional de Colombia.
+📥 1. Descarga del Dataset
+Desde la máquina virtual donde está instalado HBase, descarga el archivo CSV y renómbralo para uso posterior:
 
----
+bash
 
-## 1. 🔌 Conexión y puesta en marcha de Hadoop
+wget https://www.datos.gov.co/api/views/u3vn-bdcy/rows.csv?accessType=DOWNLOAD -O parque_automotor.csv --no-check-certificate
+🔵 Nota: Asegúrate que el archivo se llame exactamente parque_automotor.csv para que el script funcione sin errores.
 
-1. Abre **PuTTY** y conéctate a tu máquina virtual.
-2. Inicia sesión:
-   ```bash
-   Usuario: hadoop
-   Contraseña: hadoop
-   ```
-3. Inicia Hadoop:
-   ```bash
-   start-all.sh
-   ```
-4. Verifica en navegador: [http://192.168.1.4:9870](http://192.168.1.4:9870) 
-### http://your-server-ip:9870 
----
+🏗️ 2. Creación de la Tabla en HBase
+Nombre de la tabla: parque_automotor
 
-## 2. 📂 Crear carpeta en HDFS y cargar dataset
+Familias de columnas:
 
-1. Crear carpeta:
-   ```bash
-   hdfs dfs -mkdir /Tarea3
-   ```
-   Si ya teniamos la carpeta creada porque habiamos implementado el 1. Instructivo Análisis de Datos en Tiempo Real con Spark Streaming y Kafka_ nos va a salir un mensaje diciendo que la carpeta ya existe y podemos continuar
-2. Descargar dataset:
-   ```bash
-   wget https://www.datos.gov.co/api/views/cukt-wz9m/rows.csv -O capturas_nacionales.csv
-   ```
-3. Subirlo a HDFS:
-   ```bash
-   hdfs dfs -put capturas_nacionales.csv /Tarea3/
-   ```
+ubicacion:
 
----
+NOMBRE_DEPARTAMENTO
 
-## 3. 👤 Cambiar al usuario `vboxuser`
+NOMBRE_MUNICIPIO
 
-1. Abre una nueva terminal PuTTY.
-2. Inicia sesión:
-   ```bash
-   Usuario: vboxuser
-   Contraseña: bigdata
-   ```
+vehiculo:
 
----
-## 4. 🛠️ Iniciar servicios de Spark
+NOMBRE_SERVICIO
 
-### Terminal 1 – Spark
-```bash
-pyspark
-```
+ESTADO_DEL_VEHICULO
 
+NOMBRE_DE_LA_CLASE
 
-## 5. 🛠️ Iniciar servicios de Kafka
+registro:
 
-### Terminal 2 – ZooKeeper
-```bash
-sudo rm -rf /tmp/zookeeper
-sudo /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
-```
+FECHA DE REGISTRO
 
-### Terminal 3 – Kafka Broker
-```bash
-sudo /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
-```
+CANTIDAD
 
----
+MES DE PUBLICACION
 
-## 6. 📊 Análisis exploratorio (EDA) con Spark
+AÑO DE PUBLICACIÓN
 
-### Terminal 3 – Crear y ejecutar script
-```bash
-nano capturas_eda.py
-```
+Antes de proceder:
 
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
+Inicia el servicio de HBase: start-hbase.sh
 
-spark = SparkSession.builder.appName("EDA Capturas").getOrCreate()
-df = spark.read.option("header", "true").csv("hdfs://localhost:9000/Tarea3/capturas_nacionales.csv")
-df.printSchema()
-df = df.dropDuplicates().dropna()
-print("Total registros:", df.count())
-df.groupBy("genero").count().show()
-df.groupBy("descripcion_conducta").count().orderBy("count", ascending=False).show()
-df.write.mode("overwrite").parquet("hdfs://localhost:9000/Tarea3/limpio")
-```
+Inicia el servicio Thrift: hbase-daemon.sh start thrift
 
-```bash
-python3 capturas_eda.py
-```
+🖥️ 3. Creación del Script Python consultas.py
+En la máquina virtual, crea el archivo:
 
----
+bash
+Copiar
+Editar
+nano consultas.py
+Pega el siguiente contenido actualizado:
 
-## 7. 🔄 Spark Structured Streaming Consumer
+python
+Copiar
+Editar
+import happybase
+import pandas as pd
 
-### Terminal 4 – Crear archivo
-```bash
-nano capturas_streaming.py
-```
+try:
+    connection = happybase.Connection('localhost')
+    print("Conexión establecida con HBase")
 
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, sum as spark_sum
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+    table_name = 'parque_automotor'
+    families = {
+        'ubicacion': dict(),
+        'vehiculo': dict(),
+        'registro': dict()
+    }
 
-spark = SparkSession.builder.appName("CapturasStreaming").getOrCreate()
-spark.sparkContext.setLogLevel("WARN")
+    if table_name.encode() in connection.tables():
+        print(f"Eliminando tabla existente - {table_name}")
+        connection.delete_table(table_name, disable=True)
 
-schema = StructType([
-    StructField("departamento", StringType()),
-    StructField("municipio", StringType()),
-    StructField("genero", StringType()),
-    StructField("descripcion_conducta", StringType()),
-    StructField("grupo_etario", StringType()),
-    StructField("tipo_documento", StringType()),
-    StructField("cantidad", StringType())
-])
+    connection.create_table(table_name, families)
+    table = connection.table(table_name)
+    print("Tabla 'parque_automotor' creada exitosamente")
 
-df = spark.readStream.format("kafka")     .option("kafka.bootstrap.servers", "localhost:9092")     .option("subscribe", "capturas_topic")     .load()
+    data = pd.read_csv('parque_automotor.csv').head(100)
 
-parsed_df = df.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
-parsed_df = parsed_df.withColumn("cantidad", col("cantidad").cast(IntegerType()))
+    for index, row in data.iterrows():
+        row_key = f'vehiculo_{index}'.encode()
+        record = {
+            b'ubicacion:departamento': str(row['NOMBRE_DEPARTAMENTO']).encode(),
+            b'ubicacion:municipio': str(row['NOMBRE_MUNICIPIO']).encode(),
+            b'vehiculo:servicio': str(row['NOMBRE_SERVICIO']).encode(),
+            b'vehiculo:estado': str(row['ESTADO_DEL_VEHICULO']).encode(),
+            b'vehiculo:clase': str(row['NOMBRE_DE_LA_CLASE']).encode(),
+            b'registro:fecha_registro': str(row['FECHA DE REGISTRO']).encode(),
+            b'registro:cantidad': str(row['CANTIDAD']).encode(),
+            b'registro:mes_publicacion': str(row['MES DE PUBLICACION']).encode(),
+            b'registro:ano_publicacion': str(row['AÑO DE PUBLICACIÓN']).encode()
+        }
+        table.put(row_key, record)
 
-municipio_stats = parsed_df.groupBy("municipio").agg(spark_sum("cantidad").alias("total_municipio"))
-documento_stats = parsed_df.groupBy("tipo_documento").agg(spark_sum("cantidad").alias("total_documento"))
-genero_stats = parsed_df.groupBy("genero").agg(spark_sum("cantidad").alias("total_genero"))
-grupo_stats = parsed_df.groupBy("grupo_etario").agg(spark_sum("cantidad").alias("total_grupo"))
+    print("Datos cargados exitosamente en HBase")
 
-query1 = municipio_stats.writeStream.outputMode("complete").format("console").option("truncate", False).start()
-query2 = documento_stats.writeStream.outputMode("complete").format("console").option("truncate", False).start()
-query3 = genero_stats.writeStream.outputMode("complete").format("console").option("truncate", False).start()
-query4 = grupo_stats.writeStream.outputMode("complete").format("console").option("truncate", False).start()
+    # Consultas básicas
+    print("\n=== Primeros 3 registros ===")
+    count = 0
+    for key, data in table.scan():
+        if count < 3:
+            print(f"ID: {key.decode()}")
+            print(f"Municipio: {data.get(b'ubicacion:municipio', b'').decode()}")
+            print(f"Servicio: {data.get(b'vehiculo:servicio', b'').decode()}")
+            print(f"Cantidad: {data.get(b'registro:cantidad', b'').decode()}")
+            count += 1
 
-query1.awaitTermination()
-query2.awaitTermination()
-query3.awaitTermination()
-query4.awaitTermination()
-```
+    print("\n=== Vehículos registrados en Bogotá ===")
+    for key, data in table.scan():
+        if data.get(b'ubicacion:municipio', b'').decode() == 'BOGOTA':
+            print(f"ID: {key.decode()} - Clase: {data.get(b'vehiculo:clase', b'').decode()}")
 
-```bash
-spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 capturas_streaming.py
-```
+    print("\n=== Conteo de vehículos por tipo de servicio ===")
+    servicio_stats = {}
+    for key, data in table.scan():
+        servicio = data.get(b'vehiculo:servicio', b'').decode()
+        servicio_stats[servicio] = servicio_stats.get(servicio, 0) + 1
 
----
+    for servicio, count in servicio_stats.items():
+        print(f"{servicio}: {count} vehículos")
 
-## 8. 📤 Kafka Producer
+    print("\n=== Actualización de estado de un vehículo ===")
+    vehiculo_actualizar = 'vehiculo_0'
+    nuevo_estado = 'INACTIVO'
+    table.put(vehiculo_actualizar.encode(), {b'vehiculo:estado': nuevo_estado.encode()})
+    print(f"Estado actualizado para {vehiculo_actualizar}")
 
-### Terminal 5 – Crear archivo
-```bash
-nano kafka_producer_capturas.py
-```
+    print("\n=== Eliminación de un vehículo ===")
+    vehiculo_eliminar = 'vehiculo_1'
+    table.delete(vehiculo_eliminar.encode())
+    print(f"Vehículo {vehiculo_eliminar} eliminado.")
 
-```python
-import time, json, csv
-from kafka import KafkaProducer
+except Exception as e:
+    print(f"Error: {str(e)}")
 
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-    api_version=(0, 10)
-)
+finally:
+    connection.close()
+    print("Conexión cerrada.")
+Guarda los cambios (Ctrl + O, Enter, Ctrl + X) y luego ejecuta:
 
-with open('capturas_nacionales.csv', newline='', encoding='utf-8') as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-        producer.send('capturas_topic', value=row)
-        print("Enviado:", row)
-        time.sleep(0.5)
-```
+bash
+Copiar
+Editar
+python3 consultas.py
+🔧 4. Instalación de Dependencias
+Antes de ejecutar el script, asegúrate de instalar las librerías necesarias:
 
-```bash
-python3 kafka_producer_capturas.py
-```
+bash
+Copiar
+Editar
+pip install happybase pandas
+📊 5. Verificación de la Tabla en HBase
+Puedes consultar el estado de la base de datos accediendo vía navegador:
 
----
+bash
+Copiar
+Editar
+http://<IP_MAQUINA_VIRTUAL>:16010
+Ejemplo:
+http://192.168.60.28:16010
 
-## 9. 🔁 Reiniciar todo el entorno y verificar funcionamiento
+Desde aquí podrás:
 
-### Apagar entorno
+Verificar si la tabla parque_automotor fue creada.
 
-1. Cierra **todas las ventanas de PuTTY**.
-2. Apaga la máquina virtual desde VirtualBox o consola.
+Ver el número de filas cargadas.
 
-### Encender y ejecutar desde cero
-
-1. Enciende la máquina virtual.
-2. Abre 5 terminales de Putty y haz lo siguiente, de manera individual en cada ventana te logueas con el usuario Vboxuser y la contraseña bigdata, en el siguiente orden:
-
-| Terminal | Acción                                                                 |
-|----------|------------------------------------------------------------------------|
-| 1        | Iniciar Spark                                                          |
-| 1        | Iniciar ZooKeeper                                                      |
-| 2        | Iniciar Kafka                                                          |
-| 3        | Ejecutar script `kafka_producer_capturas.py` (producer)                |
-| 4        | Ejecutar script `capturas_streaming.py` (consumer)                     |
-
-### NOTA: es importante primero ejecutar el script de productor y luego el del consumidor
----
-
-## 10. 📈 Visualización y monitoreo
-
-- Verifica los resultados en consola en cada terminal.
-- Ingresa a `http://<IP_VM>:4040/streaming/` para ver los micro-batches (si aparece). Ejemplo Para este caso http://192.168.1.4:4040
-- Verifica los registros por municipio, género, documento y grupo etario en tiempo real.
+Monitorear el estado de HBase.
