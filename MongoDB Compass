@@ -1,0 +1,102 @@
+# Proyecto: Carga y Consulta de Datos en MongoDB Compass
+
+## 📄 Descripción General
+
+Esta fase describe el procedimiento para la creación de una base de datos en MongoDB Compass y la realización de operaciones básicas de consulta, actualización e inserción utilizando un conjunto de datos simulado de 100 registros sobre beneficiarios. Se utilizó la herramienta MongoDB Compass en su entorno gráfico y local.
+
+---
+
+## 📅 1. Preparación del Dataset
+
+Se construyó un archivo CSV con 100 registros simulados con los siguientes campos:
+
+* `id`: Identificador del beneficiario.
+* `nombre`
+* `apellido`
+* `tipo_documento`
+* `numero_documento`
+* `departamento`
+* `municipio`
+* `programa`
+
+El archivo fue cargado como `beneficiarios_mongodb.csv`.
+
+---
+
+## 🏠 2. Creación de la Base de Datos
+
+Desde MongoDB Compass se creó:
+
+* **Base de datos**: `gestion_beneficiarios`
+* **Colección**: `informacion_beneficiarios`
+
+Los 100 registros se importaron desde el archivo CSV usando la opción de **"Add Data > Import File"**.
+
+---
+
+## 📊 3. Consultas Realizadas
+
+### 3.1. Listar los primeros 5 registros
+
+* **Filter**: `{}`
+* **Limit**: `5`
+
+### 3.2. Filtrar por municipio (ejemplo: Bogota)
+
+```json
+{ "municipio": "Bogota" }
+```
+
+### 3.3. Conteo de beneficiarios por tipo de programa (Agregación)
+
+* Ir a pestaña **Aggregations** > `Create New Pipeline`
+* Stage `$group`:
+
+```json
+{
+  "_id": "$programa",
+  "total": { "$sum": 1 }
+}
+```
+
+---
+
+## 🔄 4. Actualización y Eliminación
+
+### 4.1. Actualizar programa de un beneficiario
+
+* **Filter**:
+
+```json
+{ "id": "beneficiario_050" }
+```
+
+* **Update**:
+
+```json
+{ "$set": { "programa": "Nuevo Programa de Salud" } }
+```
+
+### 4.2. Eliminar un beneficiario
+
+* **Filter**:
+
+```json
+{ "id": "beneficiario_020" }
+```
+
+* Hacer clic en el botón **Delete** desde la vista del documento.
+
+---
+
+## 📆 Notas Finales
+
+* MongoDB Compass permite realizar operaciones CRUD de forma gráfica sin requerir comandos de terminal.
+* Las consultas de agregación se ejecutan desde la pestaña "Aggregations".
+* Las actualizaciones y eliminaciones requieren usar los botones gráficos o las opciones avanzadas del documento.
+
+---
+
+## 🔹 Créditos
+
+Desarrollado para la Tarea 4 - Fase 1 del curso de **Big Data** (UNAD - ECBTI).
